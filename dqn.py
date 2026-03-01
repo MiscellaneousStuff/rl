@@ -163,7 +163,7 @@ if __name__ == "__main__":
         total_reward += reward
 
         obs = new_obs 
-        
+
         if terminated or truncated:
             obs, info = env.reset()
             if ep % 1000 == 0:
@@ -171,6 +171,8 @@ if __name__ == "__main__":
             ep += 1
             
             ep_rewards.append(total_reward)
+            if (total_reward / np.mean(ep_rewards)) > 6:
+                break
             total_reward = 0
 
     env.close()
