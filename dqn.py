@@ -10,13 +10,13 @@ import torch.nn.functional as F
 class QNetworkLinear(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim = 8):
         super().__init__()
-        # self.fc1 = nn.Linear(in_dim, hidden_dim)
-        # self.fc2 = nn.Linear(hidden_dim, out_dim)
-        self.fc = nn.Linear(in_dim, out_dim)
+        self.fc1 = nn.Linear(in_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, out_dim)
+        # self.fc = nn.Linear(in_dim, out_dim)
     def forward(self, x):
-        # x = F.relu(self.fc1(obs))
-        # x = self.fc2(x)
-        x = self.fc(x)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        # x = self.fc(x)
         return x
 
 def update(bin_obs, table, act, rew, next_obs, terminated, lr=0.1, gamma=0.99):
@@ -87,6 +87,7 @@ if __name__ == "__main__":
     steps = 100000
 
     model = QNetworkLinear(in_dim = 4, out_dim = 2)
+    target_model = QNetworkLinear(in_dim = 4, out_dim = 2)
     optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     gamma = 0.99
@@ -95,6 +96,7 @@ if __name__ == "__main__":
     update_values = []
     update_targets = []
     max_buffer = 1024 * 10
+    target_steps = 512
 
     for step in range(steps):
         eps = (start_eps - (step / steps))
@@ -127,6 +129,9 @@ if __name__ == "__main__":
         update_values.append([obs, action, reward, new_obs, terminated]) # values[action])
         update_targets.append(target)
 
+        if step % target_steps == 0:
+            target_model.load_state_dict(model.state_dict())
+
         if step % update_steps == 0 and step != 0 and step > warmup_steps:
             # print("len(update_values):", len(update_values))
             # print(update_values)
@@ -147,7 +152,7 @@ if __name__ == "__main__":
             q_sa = q_values[range(32), act_batch]  # Q(s, a) for the taken action
 
             with torch.no_grad():
-                next_q = model(next_obs_batch)
+                next_q = target_model(next_obs_batch)
                 max_next_q = next_q.max(dim=1).values
                 targets = rew_batch + gamma * max_next_q * (1 - done_batch)
 
@@ -171,8 +176,8 @@ if __name__ == "__main__":
             ep += 1
             
             ep_rewards.append(total_reward)
-            if (total_reward / np.mean(ep_rewards)) > 6:
-                break
+            # if (total_reward / np.mean(ep_rewards)) > 6:
+            #     break
             total_reward = 0
 
     env.close()
