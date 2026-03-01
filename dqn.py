@@ -7,6 +7,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+SEED = 42
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+
+OPTIM = "ADAM" # "ADAM"
+
 class QNetworkLinear(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim = 8):
         super().__init__()
@@ -19,83 +26,39 @@ class QNetworkLinear(nn.Module):
         # x = self.fc(x)
         return x
 
-def update(bin_obs, table, act, rew, next_obs, terminated, lr=0.1, gamma=0.99):
-    """NOTE: obs := `bin_obs`"""
-    # 1. select (s, a) row
-    obs_mask = np.all(table[:, 0:4] == bin_obs, axis=1)
-    q_sa = table[obs_mask, 4+act]
-
-    # 2. select max action over (s')
-    next_obs_mask = np.all(table[:, 0:4] == next_obs, axis=1)
-    best_val = np.max(table[next_obs_mask, 4:6], axis=-1)
-    # print("best_val", table[next_obs_mask, 4:6].shape, best_val.shape, best_val)
-
-    # 2. (s, a) = r
-    try:
-        if not terminated:
-            table[obs_mask, 4+act] = q_sa + lr * (rew + gamma*best_val - q_sa)
-        else:
-            table[obs_mask, 4+act] = q_sa + lr * (rew - q_sa)
-    except ValueError as e:
-        print(e)
-
-    # print("post", bin_obs, table[mask], act, rew)
-
-def act(table, obs, N=8):
-    bin_obs = convert_obs(obs, N=N)
-    # print("bin_obs:", bin_obs)
-    mask = np.all(table[:, 0:4] == bin_obs, axis=1)
-    # print(bin_obs.shape, table[:, 0:4].shape)
-    act_vals = table[mask]
-    # print(act_vals.shape)
-    act_vals = act_vals[0, 4:6]
-    act_idx = np.argmax(act_vals)
-    return act_idx
-
-def q_table(N=3):
-    # cart_pos cart_vel pole_ang pole_ang_vel left right
-    obs_vals = list(range(N))
-    obs_arr  = np.array(list(product(obs_vals, repeat=4)))
-    act_arr  = np.zeros((obs_arr.shape[0], 2))
-    q_table = np.concatenate((obs_arr, act_arr), axis=1)
-    return q_table
-
-def convert_obs(obs, N=5):
-    cart_pos, cart_vel, pole_ang, pole_ang_vel = obs
-    def bin(x, max, N=5):
-        bins = (x + max) / (max * 2)
-        return np.minimum((bins * N).astype(int), N-1) # [0, N-1]
-    
-    cart_pos     = bin(cart_pos, 4.8, N)
-    cart_vel     = bin(cart_vel, 6.0, N)
-    pole_ang     = bin(pole_ang, 0.418, N)
-    pole_ang_vel = bin(pole_ang_vel, 6.0, N)
-
-    return np.array([[cart_pos, cart_vel, pole_ang, pole_ang_vel]])
-
 if __name__ == "__main__":
+    env_name = "Acrobot-v1"
     bins = 8
     # table = q_table(N=bins)
 
-    env = gym.make("CartPole-v1", render_mode="None")
-    obs, info = env.reset(seed=42)
+    env = gym.make(env_name, render_mode="None")
+    obs, info = env.reset(seed=SEED)
 
     total_reward = 0
     ep = 0
     ep_rewards = [0]
     start_eps = 1.0 # chance of exploit (explore = 1 / eps)
-    steps = 100000
+    steps = 300000
 
-    model = QNetworkLinear(in_dim = 4, out_dim = 2)
-    target_model = QNetworkLinear(in_dim = 4, out_dim = 2)
-    optim = torch.optim.Adam(model.parameters(), lr=1e-3)
-
+    model = QNetworkLinear(in_dim = 6, out_dim = 3)
+    target_model = QNetworkLinear(in_dim = 6, out_dim = 3)
+    if OPTIM == "MUON":
+        optim = torch.optim.Muon(
+            [p for p in model.parameters() if p.dim() == 2],
+            lr=1e-3
+        )
+        optim_bias = torch.optim.Adam(
+            [p for p in model.parameters() if p.dim() == 1],
+            lr=1e-3
+        )
+    else:
+        optim = torch.optim.Adam(model.parameters(), lr=1e-3)
     gamma = 0.99
     warmup_steps = 512
     update_steps = 4
     update_values = []
     update_targets = []
-    max_buffer = 1024 * 10
+    max_buffer = 1024 * 50
     target_steps = 512
 
     for step in range(steps):
@@ -157,10 +120,15 @@ if __name__ == "__main__":
                 targets = rew_batch + gamma * max_next_q * (1 - done_batch)
 
             # print("update_values.shape, update_targets.shape:", update_values.shape, update_targets.shape)
+
             optim.zero_grad()
+            if OPTIM == "MUON":
+                optim_bias.zero_grad()
             loss = F.mse_loss(q_sa, targets)
             loss.backward()
             optim.step()
+            if OPTIM == "MUON":
+                optim_bias.step()
             
             # update_values = []
             # update_targets = []
@@ -182,8 +150,8 @@ if __name__ == "__main__":
 
     env.close()
 
-    env = gym.make("CartPole-v1", render_mode="human")
-    obs, info = env.reset(seed=42)
+    env = gym.make(env_name, render_mode="human")
+    obs, info = env.reset(seed=SEED)
 
     total_reward = 0
     for steps in range(500):
