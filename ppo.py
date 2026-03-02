@@ -93,23 +93,26 @@ if __name__ == "__main__":
                 returns.insert(0, G)
             returns = torch.tensor(returns)
             
-            # Advantages
+            # (Normalised) Advantages
             advantages = returns - old_values
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
             # PPO update — multiple epochs over same data
+            entropy_coef = 0.01  # Coefficient to weight the entropy term
             for epoch in range(K_epochs):
                 probs, values = model(obs_batch)
                 dist = torch.distributions.Categorical(probs)
                 new_log_probs = dist.log_prob(acts_batch)
 
-                ratio = torch.exp(new_log_probs - old_log_probs)
+                entropy = dist.entropy().mean()
+
+                ratio = torch.exp(new_log_probs - old_log_probs) # new_log_probs / old_log_probs
                 clipped = torch.clamp(ratio, 1 - clip_eps, 1 + clip_eps)
 
                 actor_loss = -torch.min(ratio * advantages, clipped * advantages).mean()
                 critic_loss = F.mse_loss(values.squeeze(), returns)
 
-                loss = actor_loss + 0.5 * critic_loss
+                loss = actor_loss + 0.5 * critic_loss - entropy_coef * entropy
 
                 optim.zero_grad()
                 loss.backward()
