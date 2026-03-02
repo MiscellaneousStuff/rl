@@ -41,12 +41,6 @@ if __name__ == "__main__":
     optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     gamma = 0.99
-    warmup_steps = 512
-    update_steps = 4
-    update_values = []
-    update_targets = []
-    max_buffer = 1024 * 10
-    target_steps = 512
 
     acts = []
     rewards = []
