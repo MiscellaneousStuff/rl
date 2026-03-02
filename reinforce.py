@@ -47,7 +47,6 @@ if __name__ == "__main__":
     obs_s = []
 
     for step in range(steps):
-        eps = (start_eps - (step / steps))
         obs = torch.tensor(obs)
         act_probs = model(obs)
 
@@ -79,7 +78,7 @@ if __name__ == "__main__":
 
             discounted_rewards = torch.tensor(discounted_rewards)
             discounted_rewards = (discounted_rewards - discounted_rewards.mean()) / (discounted_rewards.std() + 1e-8)
-            loss = (-act_log_probs * discounted_rewards).sum()
+            loss = (-act_log_probs * discounted_rewards).mean()
             optim.zero_grad()
             loss.backward()
             optim.step()
@@ -89,7 +88,7 @@ if __name__ == "__main__":
             rewards = []
 
             if ep % 1000 == 0:
-                print(ep, total_reward, eps, np.max(ep_rewards), np.mean(ep_rewards))
+                print(ep, total_reward, np.max(ep_rewards), np.mean(ep_rewards))
             ep += 1
             
             ep_rewards.append(total_reward)
